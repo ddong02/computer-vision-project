@@ -144,6 +144,7 @@ print("[INFO] 검지만 펴면 그리기 시작")
 # (이전 코드 생략... 모든 함수와 기본 설정은 그대로입니다)
 
 # --- 메인 루프 시작 ---
+# --- 메인 루프 시작 ---
 while True:
     if not show_sketch_only:
         ret, frame = cap.read()
@@ -170,58 +171,39 @@ while True:
                     else:
                         fingers_up.append(landmarks[tip_id].y < landmarks[tip_id - 2].y)
 
-                # if fingers_up == [False, True, False, False, True]:
-                #     print("[INFO] 종료 제스처 감지됨: 프로그램 종료")
-                #     cap.release()
-                #     cv2.destroyAllWindows()
-                #     exit()
-                
-                # === 스케치 모드 활성화 로직 수정 ===
-                # 스케치 모드 활성화는 처음 한 번만 실행되도록 하고,
-                # 이후 all(fingers_up)은 포인터 모드로 사용됩니다.
                 if all(fingers_up) and not sketch_mode_displayed:
                     sketch_enabled = True
                     sketch_mode_displayed = True
                     sketch_mode_activated_time = cv2.getTickCount()
 
-                # === 제스처 정의 로직 수정 ===
-                # (while 루프 안의 기존 코드...)
-
-          # === 제스처 정의 로직 수정 ===
                 only_index_up = fingers_up == [False, True, False, False, False]
                 index_middle_up = fingers_up == [False, True, True, False, False]
                 all_fingers_up = all(fingers_up)
-                is_fist = not any(fingers_up) # 모든 손가락이 접혔는지 (주먹) 확인
+                is_fist = not any(fingers_up)
 
                 x = int(landmarks[8].x * w)
                 y = int(landmarks[8].y * h)
 
-                # === ✨ 요청하신 기능이 적용된 새로운 제스처 제어 로직 ===
                 if sketch_enabled:
                     if is_fist:
-                        # 1. 주먹을 쥐면 '그리기 비활성화' 상태로 전환
                         if not drawing_paused:
                             print("[INFO] 그리기 비활성화 (주먹 감지)")
                             drawing_paused = True
                             drawing_activated_time = None
-                        prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
+                        prev_x, prev_y = None, None
 
                     elif all_fingers_up:
-                        # 2. 모든 손가락을 펴면 '그리기 활성화' 상태로 전환하고 포인터 표시
                         if drawing_paused:
                             print("[INFO] 그리기 활성화 (모든 손가락 폄)")
                             drawing_paused = False
                             drawing_activated_time = cv2.getTickCount()
                         
-                        # 포인터 모드 로직 (기존과 동일)
                         cv2.circle(canvas_display, (x, y), 15, (255, 100, 100), -1)
                         cv2.circle(canvas_display, (x, y), 15, (255, 255, 255), 2)
-                        prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
+                        prev_x, prev_y = None, None
 
                     elif not drawing_paused:
-                        # 3. '그리기 활성화' 상태일 때만 그리기/지우기 동작
                         if only_index_up:
-                            # 그리기 모드
                             current_color_tuple = tuple(current_color)
                             if current_color_tuple not in color_layers:
                                 color_layers[current_color_tuple] = np.ones((480, 640, 3), np.uint8) * 255
@@ -233,48 +215,49 @@ while True:
                             cv2.circle(canvas_display, (x, y), 10, (0, 0, 255), 2)
 
                         elif index_middle_up:
-                            # 지우기 모드
                             cx, cy = int(landmarks[8].x * w), int(landmarks[8].y * h)
                             for layer in color_layers.values():
                                 cv2.circle(layer, (cx, cy), 30, (255, 255, 255), -1)
                             
                             cv2.circle(canvas_display, (cx, cy), 30, (192, 192, 192), 2)
-                            prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
+                            prev_x, prev_y = None, None
                         
                         else:
-                            # 그 외 제스처에서는 선이 이어지지 않도록 초기화
                             prev_x, prev_y = None, None
 
                     else:
-                        # 4. '그리기 비활성화' 상태에서는 아무것도 하지 않음
                         prev_x, prev_y = None, None
-
+                
                 else:
-                    # sketch_enabled가 False인 경우
                     prev_x, prev_y = None, None
-                # (이하 else: prev_x, prev_y... 부분은 위 로직에 포함되었으므로 삭제 또는 이중 확인)
-        
 
-      # === ✨ 색상 변경 로직 수정: 그리기가 비활성화될 때만 색상 변경 가능하도록 수정 ===
+                # --- ✨ 포인터 좌표 및 정보 표시 (수정된 최종 버전) ---
+                # 1. 포인터 좌표 (x, y)를 화면 좌측 하단에 표시합니다.
+                pos_text = f"(x, y) : ({x}, {y})"
+                cv2.putText(frame, pos_text, (10, frame.shape[0] - 40), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+                # 2. 현재 선택된 색상의 RGB 값을 바로 아래에 표시합니다.
+                r, g, b = current_color[2], current_color[1], current_color[0]
+                rgb_text = f"RGB: ({r}, {g}, {b})"
+                cv2.putText(frame, rgb_text, (10, frame.shape[0] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                # --- 여기까지 수정 ---
+
+        # === 색상 변경 로직 수정 ===
         if sketch_enabled:
-            # 'drawing_paused'가 True일 때만 색상 변경이 가능함
             can_change_color = drawing_paused
-
-            # 색상 변경 가능 여부에 따라 ROI 상자 색상을 다르게 표시 (시각적 피드백)
-            # 가능할 때: 녹색(0, 255, 0), 불가능할 때: 회색(200, 200, 200)
             roi_box_color = (0, 255, 0) if can_change_color else (200, 200, 200)
             cv2.rectangle(frame, (0, 0), (50, 50), roi_box_color, 2)
             
-            # 색상 변경이 가능한 상태일 때만 아래 로직을 실행
             if can_change_color:
                 roi_frame = frame[0:50, 0:50]
                 roi_hsv = hsv[0:50, 0:50]
 
-                # 이름과 함께 색상 범위를 순회
                 for name, lower, upper in color_ranges:
                     mask = cv2.inRange(roi_hsv, lower, upper)
                     
-                    if cv2.countNonZero(mask) > 125: # ROI 영역의 50% 이상 해당 색이면
+                    if cv2.countNonZero(mask) > 125:
                         new_color = None
                         if name == 'black':
                             new_color = (0, 0, 0)
@@ -285,19 +268,11 @@ while True:
                         if current_color != new_color:
                             print(f"[INFO] 색상 변경됨 ({name}) → {new_color}")
                             current_color = new_color
-                        break # 하나의 색상을 찾으면 루프 종료
-        # === 색상 변경 로직 수정 끝 ===
+                        break
 
         # 현재 선택된 색상을 보여주는 사각형
         cv2.rectangle(frame, (0, 60), (30, 90), current_color, -1)
-        # (이하 코드 동일...)
         
-        # 현재 색상의 RGB 값을 텍스트로 표시
-        r, g, b = current_color[2], current_color[1], current_color[0]
-        rgb_text = f"RGB: ({r}, {g}, {b})"
-        cv2.putText(frame, rgb_text, (10, frame.shape[0] - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
         # 스케치 모드 활성화 메시지 표시
         if sketch_mode_displayed and sketch_mode_activated_time:
             time_passed = (cv2.getTickCount() - sketch_mode_activated_time) / cv2.getTickFrequency()
@@ -307,13 +282,12 @@ while True:
 
         cv2.imshow("Camera", frame)
 
-        # === 수정/추가된 부분: 그리기 상태 관련 문구 출력 ===
+        # 그리기 상태 관련 문구 출력
         if sketch_enabled:
-            # 1. 그리기 비활성화 상태 메시지 (지속적으로 표시)
             if drawing_paused:
                 text = "Drawing Paused"
                 font_scale = 1.2
-                text_color = (0, 0, 255) # 빨간색
+                text_color = (0, 0, 255)
                 
                 text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
                 text_x = (canvas_display.shape[1] - text_size[0]) // 2
@@ -322,13 +296,12 @@ while True:
                 cv2.putText(canvas_display, text, (text_x + 2, text_y + 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (100, 100, 100), 2, cv2.LINE_AA)
                 cv2.putText(canvas_display, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, 2, cv2.LINE_AA)
 
-            # 2. 그리기 활성화 상태 메시지 (2초간 표시)
             elif drawing_activated_time:
                 time_since_activation = (cv2.getTickCount() - drawing_activated_time) / cv2.getTickFrequency()
                 if time_since_activation < SHOW_MESSAGE_DURATION:
                     text = "Drawing Activated"
                     font_scale = 1.2
-                    text_color = (0, 255, 0) # 초록색
+                    text_color = (0, 255, 0)
                     
                     text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
                     text_x = (canvas_display.shape[1] - text_size[0]) // 2
@@ -337,13 +310,12 @@ while True:
                     cv2.putText(canvas_display, text, (text_x + 2, text_y + 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (100, 100, 100), 2, cv2.LINE_AA)
                     cv2.putText(canvas_display, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, 2, cv2.LINE_AA)
                 else:
-                    drawing_activated_time = None # 시간이 지나면 타이머 초기화
+                    drawing_activated_time = None
             
+            # 스케치 창은 항상 표시되도록 위치를 조정
             cv2.imshow("Sketch", canvas_display)
-        # === 수정/추가된 부분 끝 ===
 
-    else:
-        # (필터링 모드 로직은 이전과 동일)
+    else: # if show_sketch_only is True
         if not trackbars_created:
             final_sketch = combine_layers()
             cv2.imshow("Original Image", final_sketch)
