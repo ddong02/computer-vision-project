@@ -57,7 +57,7 @@ def create_color_trackbars():
     on_trackbar_change(0)
 
 # --- 기본 설정 ---
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.5)
