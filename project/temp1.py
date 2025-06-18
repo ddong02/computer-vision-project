@@ -2,9 +2,6 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-# --- 데이터 구조 변경: 단일 켄버스에서 색상별 레이어 딕셔너리로 ---
-# 각 색상별로 독립된 켄버스(레이어)를 저장합니다.
-# key: 색상(BGR 튜플), value: 해당 색상의 그림이 그려진 numpy 배열
 color_layers = {} 
 background_canvas = np.ones((480, 640, 3), np.uint8) * 255 # 최종 배경
 
@@ -124,6 +121,7 @@ sketch_mode_displayed = False
 sketch_mode_activated_time = None
 show_sketch_only = False
 trackbars_initialized = False
+drawing_paused = False
 
 # 기존 color_ranges 리스트를 아래와 같이 수정합니다.
 color_ranges = [
@@ -185,50 +183,72 @@ while True:
                     sketch_mode_activated_time = cv2.getTickCount()
 
                 # === 제스처 정의 로직 수정 ===
+                # (while 루프 안의 기존 코드...)
+
+          # === 제스처 정의 로직 수정 ===
                 only_index_up = fingers_up == [False, True, False, False, False]
                 index_middle_up = fingers_up == [False, True, True, False, False]
-                # '모든 손가락을 편' 제스처를 명확히 정의합니다.
                 all_fingers_up = all(fingers_up)
+                is_fist = not any(fingers_up) # 모든 손가락이 접혔는지 (주먹) 확인
 
                 x = int(landmarks[8].x * w)
                 y = int(landmarks[8].y * h)
 
-                # === if/elif/else 구조로 제스처 우선순위 제어 ===
-                if sketch_enabled and only_index_up:
-                    # 1. 그리기 모드
-                    current_color_tuple = tuple(current_color)
-                    if current_color_tuple not in color_layers:
-                        color_layers[current_color_tuple] = np.ones((480, 640, 3), np.uint8) * 255
-                    
-                    if prev_x is not None:
-                        cv2.line(color_layers[current_color_tuple], (prev_x, prev_y), (x, y), current_color, 5)
-                    prev_x, prev_y = x, y
-                    
-                    cv2.circle(canvas_display, (x, y), 10, (0, 0, 255), 2)
+                # === ✨ 요청하신 기능이 적용된 새로운 제스처 제어 로직 ===
+                if sketch_enabled:
+                    if is_fist:
+                        # 1. 주먹을 쥐면 '그리기 비활성화' 상태로 전환
+                        if not drawing_paused:
+                            print("[INFO] 그리기 비활성화 (주먹 감지)")
+                            drawing_paused = True
+                        prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
 
-                elif sketch_enabled and index_middle_up:
-                    # 2. 지우기 모드
-                    cx, cy = int(landmarks[8].x * w), int(landmarks[8].y * h)
-                    for layer in color_layers.values():
-                        cv2.circle(layer, (cx, cy), 30, (255, 255, 255), -1)
-                    
-                    cv2.circle(canvas_display, (cx, cy), 30, (192, 192, 192), 2)
-                    prev_x, prev_y = None, None # 지우개 모드에서는 선이 이어지면 안됨
+                    elif all_fingers_up:
+                        # 2. 모든 손가락을 펴면 '그리기 활성화' 상태로 전환하고 포인터 표시
+                        if drawing_paused:
+                            print("[INFO] 그리기 활성화 (모든 손가락 폄)")
+                            drawing_paused = False
+                        
+                        # 포인터 모드 로직 (기존과 동일)
+                        cv2.circle(canvas_display, (x, y), 15, (255, 100, 100), -1)
+                        cv2.circle(canvas_display, (x, y), 15, (255, 255, 255), 2)
+                        prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
 
-                elif sketch_enabled and all_fingers_up:
-                    # === 3. 포인터 모드 (새로 추가된 부분) ===
-                    # 포인터만 표시하고, 실제 그림을 그리지는 않습니다.
-                    # 선이 이어지지 않도록 prev_x, prev_y를 초기화하는 것이 중요합니다.
-                    cv2.circle(canvas_display, (x, y), 15, (255, 100, 100), -1) # 파란색 채운 원
-                    cv2.circle(canvas_display, (x, y), 15, (255, 255, 255), 2)  # 흰색 테두리
-                    prev_x, prev_y = None, None
+                    elif not drawing_paused:
+                        # 3. '그리기 활성화' 상태일 때만 그리기/지우기 동작
+                        if only_index_up:
+                            # 그리기 모드
+                            current_color_tuple = tuple(current_color)
+                            if current_color_tuple not in color_layers:
+                                color_layers[current_color_tuple] = np.ones((480, 640, 3), np.uint8) * 255
+                            
+                            if prev_x is not None:
+                                cv2.line(color_layers[current_color_tuple], (prev_x, prev_y), (x, y), current_color, 5)
+                            prev_x, prev_y = x, y
+                            
+                            cv2.circle(canvas_display, (x, y), 10, (0, 0, 255), 2)
+
+                        elif index_middle_up:
+                            # 지우기 모드
+                            cx, cy = int(landmarks[8].x * w), int(landmarks[8].y * h)
+                            for layer in color_layers.values():
+                                cv2.circle(layer, (cx, cy), 30, (255, 255, 255), -1)
+                            
+                            cv2.circle(canvas_display, (cx, cy), 30, (192, 192, 192), 2)
+                            prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
+                        
+                        else:
+                            # 그 외 제스처에서는 선이 이어지지 않도록 초기화
+                            prev_x, prev_y = None, None
+
+                    else:
+                        # 4. '그리기 비활성화' 상태에서는 아무것도 하지 않음
+                        prev_x, prev_y = None, None
 
                 else:
-                    # 4. 그 외의 모든 경우 (주먹을 쥐거나 다른 제스처)
-                    # 선 그리기를 멈추기 위해 좌표를 초기화합니다.
+                    # sketch_enabled가 False인 경우
                     prev_x, prev_y = None, None
-        else:
-            prev_x, prev_y = None, None
+                # (이하 else: prev_x, prev_y... 부분은 위 로직에 포함되었으므로 삭제 또는 이중 확인)
         
 # while 루프 안의 '# === 색상 변경 기능 복원 ===' 블록을 아래 코드로 대체하세요.
 
