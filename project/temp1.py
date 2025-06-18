@@ -122,6 +122,8 @@ sketch_mode_activated_time = None
 show_sketch_only = False
 trackbars_initialized = False
 drawing_paused = False
+drawing_activated_time = None
+SHOW_MESSAGE_DURATION = 2.0
 
 # 기존 color_ranges 리스트를 아래와 같이 수정합니다.
 color_ranges = [
@@ -201,6 +203,7 @@ while True:
                         if not drawing_paused:
                             print("[INFO] 그리기 비활성화 (주먹 감지)")
                             drawing_paused = True
+                            drawing_activated_time = None
                         prev_x, prev_y = None, None # 선이 이어지지 않도록 초기화
 
                     elif all_fingers_up:
@@ -208,6 +211,7 @@ while True:
                         if drawing_paused:
                             print("[INFO] 그리기 활성화 (모든 손가락 폄)")
                             drawing_paused = False
+                            drawing_activated_time = cv2.getTickCount()
                         
                         # 포인터 모드 로직 (기존과 동일)
                         cv2.circle(canvas_display, (x, y), 15, (255, 100, 100), -1)
@@ -250,35 +254,43 @@ while True:
                     prev_x, prev_y = None, None
                 # (이하 else: prev_x, prev_y... 부분은 위 로직에 포함되었으므로 삭제 또는 이중 확인)
         
-# while 루프 안의 '# === 색상 변경 기능 복원 ===' 블록을 아래 코드로 대체하세요.
 
-        # === 색상 변경 기능 수정 (흰색, 검은색 처리 추가) ===
+      # === ✨ 색상 변경 로직 수정: 그리기가 비활성화될 때만 색상 변경 가능하도록 수정 ===
         if sketch_enabled:
-            roi_frame = frame[0:50, 0:50]
-            roi_hsv = hsv[0:50, 0:50]
-            cv2.rectangle(frame, (0, 0), (50, 50), (200, 200, 200), 2)
+            # 'drawing_paused'가 True일 때만 색상 변경이 가능함
+            can_change_color = drawing_paused
 
-            # 이름과 함께 색상 범위를 순회
-            for name, lower, upper in color_ranges:
-                mask = cv2.inRange(roi_hsv, lower, upper)
-                
-                if cv2.countNonZero(mask) > 125:
-                    new_color = None
-                    # === 이 부분이 핵심 수정사항 ===
-                    if name == 'black':
-                        new_color = (0, 0, 0)       # 순수한 검은색으로 지정
-                    else: # 그 외 R,G,B 색상일 경우
-                        mean_val = cv2.mean(roi_frame, mask=mask)
-                        new_color = (int(mean_val[0]), int(mean_val[1]), int(mean_val[2]))
+            # 색상 변경 가능 여부에 따라 ROI 상자 색상을 다르게 표시 (시각적 피드백)
+            # 가능할 때: 녹색(0, 255, 0), 불가능할 때: 회색(200, 200, 200)
+            roi_box_color = (0, 255, 0) if can_change_color else (200, 200, 200)
+            cv2.rectangle(frame, (0, 0), (50, 50), roi_box_color, 2)
+            
+            # 색상 변경이 가능한 상태일 때만 아래 로직을 실행
+            if can_change_color:
+                roi_frame = frame[0:50, 0:50]
+                roi_hsv = hsv[0:50, 0:50]
 
-                    if current_color != new_color:
-                        print(f"[INFO] 색상 변경됨 ({name}) → {new_color}")
-                        current_color = new_color
-                    break
-        # === 색상 변경 기능 수정 끝 ===
-        
+                # 이름과 함께 색상 범위를 순회
+                for name, lower, upper in color_ranges:
+                    mask = cv2.inRange(roi_hsv, lower, upper)
+                    
+                    if cv2.countNonZero(mask) > 125: # ROI 영역의 50% 이상 해당 색이면
+                        new_color = None
+                        if name == 'black':
+                            new_color = (0, 0, 0)
+                        else:
+                            mean_val = cv2.mean(roi_frame, mask=mask)
+                            new_color = (int(mean_val[0]), int(mean_val[1]), int(mean_val[2]))
+
+                        if current_color != new_color:
+                            print(f"[INFO] 색상 변경됨 ({name}) → {new_color}")
+                            current_color = new_color
+                        break # 하나의 색상을 찾으면 루프 종료
+        # === 색상 변경 로직 수정 끝 ===
+
         # 현재 선택된 색상을 보여주는 사각형
         cv2.rectangle(frame, (0, 60), (30, 90), current_color, -1)
+        # (이하 코드 동일...)
         
         # 현재 색상의 RGB 값을 텍스트로 표시
         r, g, b = current_color[2], current_color[1], current_color[0]
@@ -294,8 +306,41 @@ while True:
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         cv2.imshow("Camera", frame)
+
+        # === 수정/추가된 부분: 그리기 상태 관련 문구 출력 ===
         if sketch_enabled:
+            # 1. 그리기 비활성화 상태 메시지 (지속적으로 표시)
+            if drawing_paused:
+                text = "Drawing Paused"
+                font_scale = 1.2
+                text_color = (0, 0, 255) # 빨간색
+                
+                text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
+                text_x = (canvas_display.shape[1] - text_size[0]) // 2
+                text_y = 50
+                
+                cv2.putText(canvas_display, text, (text_x + 2, text_y + 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (100, 100, 100), 2, cv2.LINE_AA)
+                cv2.putText(canvas_display, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, 2, cv2.LINE_AA)
+
+            # 2. 그리기 활성화 상태 메시지 (2초간 표시)
+            elif drawing_activated_time:
+                time_since_activation = (cv2.getTickCount() - drawing_activated_time) / cv2.getTickFrequency()
+                if time_since_activation < SHOW_MESSAGE_DURATION:
+                    text = "Drawing Activated"
+                    font_scale = 1.2
+                    text_color = (0, 255, 0) # 초록색
+                    
+                    text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
+                    text_x = (canvas_display.shape[1] - text_size[0]) // 2
+                    text_y = 50
+
+                    cv2.putText(canvas_display, text, (text_x + 2, text_y + 2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (100, 100, 100), 2, cv2.LINE_AA)
+                    cv2.putText(canvas_display, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_color, 2, cv2.LINE_AA)
+                else:
+                    drawing_activated_time = None # 시간이 지나면 타이머 초기화
+            
             cv2.imshow("Sketch", canvas_display)
+        # === 수정/추가된 부분 끝 ===
 
     else:
         # (필터링 모드 로직은 이전과 동일)
